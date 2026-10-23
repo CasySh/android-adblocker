@@ -64,7 +64,7 @@ class MyVpnService : VpnService() {
                         val destIp =
                             "${packet[16].toUByte()}.${packet[17].toUByte()}.${packet[18].toUByte()}.${packet[19].toUByte()}"
 
-                        if (protocol == 17) { // UDP
+                        if (protocol == 17) { // UDP. 8 байт
                             val srcPort = ((packet[ipHeaderLength].toInt() and 0xFF) shl 8) or
                                     (packet[ipHeaderLength + 1].toInt() and 0xFF)
                             val destPort = ((packet[ipHeaderLength + 2].toInt() and 0xFF) shl 8) or
@@ -72,8 +72,13 @@ class MyVpnService : VpnService() {
 
                             // Если destPort == 53, перед нами DNS-запрос
                             if (destPort == 53) {
-                                // пока просто проверяем что успешно поймали пакет
-                                Log.d("MyVpnService", "Пойман DNS-пакет. Размер: $length байт")
+                                val dnsHeaderOffset = ipHeaderLength + 8
+                                // в DNS заголовке первые 12 байт - служебная информация, пропускаем
+                                val domainOffset = dnsHeaderOffset + 12
+
+                                val domain = parseDnsName(packet, domainOffset)
+
+                                Log.d("MyVpnService", "DNS запрос: $domain")
                             }
                         }
                     }
@@ -84,5 +89,32 @@ class MyVpnService : VpnService() {
                 break
             }
         }
+    }
+
+    private fun parseDnsName(packet: ByteArray, startOffset: Int): String {
+        val domainParts = mutableListOf<String>()
+        var currentOffset = startOffset
+
+        while (true) {
+            // читаем длину следующей части
+            val length = packet[currentOffset].toInt() and 0xFF
+            // если длина 0 - домен закончился
+            if (length == 0) {
+                break
+            }
+            // если старшие два бита равны 11, это указатель на сжатие
+            // пока пропускаем это
+            if (length and 0xC0 == 0xC0) {
+                break
+            }
+
+            currentOffset++
+
+            val part = String(packet, currentOffset, length)
+            domainParts.add(part)
+
+            currentOffset += length
+        }
+        return domainParts.joinToString(".")
     }
 }
