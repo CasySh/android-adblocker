@@ -18,6 +18,8 @@ import android.widget.Toast
 import androidx.compose.material3.Button
 import android.net.VpnService
 import android.content.Intent
+import android.util.Log
+
 class MainActivity : ComponentActivity() {
     private val vpnPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult())
@@ -32,6 +34,16 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            val permissionLauncher = registerForActivityResult(
+                ActivityResultContracts.RequestPermission()
+            ) { isGranted ->
+                if (!isGranted) {
+                    Log.w("MainActivity", "Notification permission denied")
+                }
+            }
+            permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
         setContent {
             Mypain2Theme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->

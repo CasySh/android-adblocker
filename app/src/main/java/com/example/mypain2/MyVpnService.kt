@@ -1,9 +1,13 @@
 package com.example.mypain2
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Intent
 import android.net.VpnService
+import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import java.io.FileInputStream
 import java.io.FileOutputStream
 
@@ -31,6 +35,7 @@ class MyVpnService : VpnService() {
             Log.e("MyVpnService", "Failed to establish VPN")
         } else {
             Log.d("MyVpnService", "VPN established successfully")
+            startForeground(1, createNotification())
         }
 
         // Запускаем чтение в отдельном потоке чтобы не блокировать сервис
@@ -48,6 +53,28 @@ class MyVpnService : VpnService() {
         vpnInterface?.close()
         Log.d("MyVpnService", "VPN service destroyed")
     }
+
+    private fun createNotification(): android.app.Notification {
+        val channelId = "vpn_channel"
+
+        // канал уведомлений для Android 8+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                channelId,
+                "VPN Service",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(channel)
+        }
+        return NotificationCompat.Builder(this, channelId)
+            .setContentTitle("AdBlocker VPN")
+            .setContentText("Фильтрация рекламы активна")
+            .setSmallIcon(android.R.drawable.ic_lock_lock)
+            .build()
+    }
+
+
     private fun readPackets() {
         val vpnInput = FileInputStream(vpnInterface!!.fileDescriptor)
         val vpnOutput = FileOutputStream(vpnInterface!!.fileDescriptor)
