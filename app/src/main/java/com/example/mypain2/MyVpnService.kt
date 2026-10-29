@@ -5,6 +5,7 @@ import android.net.VpnService
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import java.io.FileInputStream
+import java.io.FileOutputStream
 
 class MyVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
@@ -12,6 +13,8 @@ class MyVpnService : VpnService() {
     private var vpnThread: Thread? = null
     @Volatile
     private var isRunning = false
+
+    val blacklist = setOf("doubleclick.net", "googleads.g.doubleclick.net", "adservice.google.com")
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d("MyVpnService", "VPN service started")
@@ -47,6 +50,7 @@ class MyVpnService : VpnService() {
     }
     private fun readPackets() {
         val vpnInput = FileInputStream(vpnInterface!!.fileDescriptor)
+        val vpnOutput = FileOutputStream(vpnInterface!!.fileDescriptor)
         val packet = ByteArray(32767)
 
         while (isRunning) {
@@ -78,7 +82,50 @@ class MyVpnService : VpnService() {
 
                                 val domain = parseDnsName(packet, domainOffset)
 
-                                Log.d("MyVpnService", "DNS запрос: $domain")
+                                var isBlocked = false
+                                for (blockedDomain in blacklist) {
+                                    if (domain == blockedDomain || domain.endsWith(".$blockedDomain")) {
+                                        isBlocked = true
+                                        break
+                                    }
+                                }
+                                if (isBlocked) {
+                                    Log.d("MyVpnService", "БЛОКИРОВКА: $domain")
+
+                                    // копируем входящий пакет, чтобы изменить его на ответ
+                                    val response = packet.copyOf(length)
+
+                                    // меняем получателя и отправителя местами
+                                    for (i in 0 until 4) {
+                                        val temp = response[12 + i]
+                                        response[12 + i] = response[16 + i]
+                                        response[16 + i] = temp
+                                    }
+
+                                    // меняем UDP-порты местами (srcPort и dstPort)
+                                    val udpOffset = ipHeaderLength
+                                    val tempPort1 = response[udpOffset]
+                                    val tempPort2 = response[udpOffset + 1]
+                                    response[udpOffset] = response[udpOffset + 2]
+                                    response[udpOffset + 1] = response[udpOffset + 3]
+                                    response[udpOffset + 2] = tempPort1
+                                    response[udpOffset + 3] = tempPort2
+
+                                    // меняем флаги DNS на NXDOMAIN (домена не существует)
+                                    val dnsFlagsOffset = udpOffset + 8 + 2
+                                    response[dnsFlagsOffset] = 0x81.toByte()
+                                    response[dnsFlagsOffset + 1] = 0x83.toByte()
+
+                                    // отправляем ответ обратно в TUN
+                                    try {
+                                        vpnOutput.write(response, 0, length)
+                                        Log.d("MyVpnService", "Отправлен NXDOMAIN для $domain")
+                                    } catch (e: Exception) {
+                                        Log.e("MyVpnService", "Ошибка записи ответа", e)
+                                    }
+                                } else {
+                                    Log.d("MyVpnService", "DNS запрос: $domain")
+                                }
                             }
                         }
                     }
