@@ -20,6 +20,11 @@ import android.net.VpnService
 import android.content.Intent
 import android.util.Log
 
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+
 class MainActivity : ComponentActivity() {
     private val vpnPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult())
@@ -47,9 +52,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             Mypain2Theme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    VpnScreen(
+                    MainScreen(
                         modifier = Modifier.padding(innerPadding),
-                        onStartVpn = { onStartVpnClicked() }
+                        onStartVpn = { onStartVpnClicked() },
+                        onStopVpn = { stopVpnService() }
                     )
                 }
             }
@@ -73,22 +79,53 @@ class MainActivity : ComponentActivity() {
         startService(intent)
         Toast.makeText(this, "VPN starting...", Toast.LENGTH_SHORT).show()
     }
+    private fun stopVpnService() {
+        Log.d("MainActivity", "Отправка команды STOP в сервис...")
+        val intent = Intent(this, MyVpnService::class.java).apply {
+            action = MyVpnService.ACTION_STOP
+        }
+        // Используем startService, чтобы передать команду в onStartCommand
+        startService(intent)
+        Toast.makeText(this, "VPN stopped", Toast.LENGTH_SHORT).show()
+    }
 }
 
 @Composable
-fun VpnScreen(modifier: Modifier = Modifier, onStartVpn: () -> Unit) {
-    Button(
-        onClick = onStartVpn,
-        modifier = modifier
-    ) {
-        Text("Start VPN")
+fun MainScreen(
+    modifier: Modifier = Modifier,
+    onStartVpn: () -> Unit,
+    onStopVpn: () -> Unit
+) {
+    var isVpnActive by remember { mutableStateOf(false) }
+
+    if (isVpnActive) {
+        Button(
+            onClick = {
+                onStopVpn()
+                isVpnActive = false
+            },
+            modifier = modifier
+        ) {
+            Text("Stop VPN")
+        }
+    } else {
+        Button(
+            onClick = {
+                onStartVpn()
+                isVpnActive = true
+            },
+            modifier = modifier
+        ) {
+            Text("Start VPN")
+        }
     }
 }
+
 @Preview(showBackground = true)
 @Composable
-fun VpnScreenPreview() {
+fun MainScreenPreview() {
     Mypain2Theme {
-        VpnScreen(onStartVpn = {})
+        MainScreen(onStartVpn = {}, onStopVpn = {})
     }
 }
 

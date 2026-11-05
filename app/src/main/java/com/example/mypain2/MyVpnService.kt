@@ -13,15 +13,31 @@ import java.io.FileOutputStream
 
 class MyVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
-
     private var vpnThread: Thread? = null
     @Volatile
     private var isRunning = false
-
     val blacklist = setOf("doubleclick.net", "googleads.g.doubleclick.net", "adservice.google.com")
+    companion object {
+        const val ACTION_STOP = "com.example.mypain2.STOP_VPN"
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            stopVpn()
+            return START_NOT_STICKY
+        }
         Log.d("MyVpnService", "VPN service started")
+        startVpn()
+        return START_STICKY
+    }
+
+    private fun startVpn() {
+        // если старый поток жив - останавливаем
+        if (vpnThread?.isAlive == true) {
+            isRunning = false
+            vpnInterface?.close()
+            vpnThread?.interrupt()
+        }
 
         val builder = Builder()
         builder.setSession("My AdBlocker VPN")
@@ -33,24 +49,33 @@ class MyVpnService : VpnService() {
 
         if (vpnInterface == null) {
             Log.e("MyVpnService", "Failed to establish VPN")
-        } else {
-            Log.d("MyVpnService", "VPN established successfully")
-            startForeground(1, createNotification())
+            return
         }
 
-        // Запускаем чтение в отдельном потоке чтобы не блокировать сервис
-        isRunning = true
-        vpnThread = Thread {
-            readPackets()
-        }.apply { start() }
+        Log.d("MyVpnService", "VPN established successfully")
+        startForeground(1, createNotification())
 
-        return START_STICKY
+        isRunning = true
+        vpnThread = Thread { readPackets() }.apply { start() }
     }
-    override fun onDestroy() {
-        super.onDestroy()
+
+    private fun stopVpn() {
+        Log.d("MyVpnService", "Получена команда STOP")
         isRunning = false
-        vpnThread?.interrupt()
         vpnInterface?.close()
+        vpnInterface = null
+        vpnThread?.interrupt()
+        vpnThread = null
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    override fun onDestroy() {
+        Log.d("MyVpnService", "VPN service destroying...")
+        isRunning = false
+        vpnInterface?.close()
+        vpnThread?.interrupt()
+        super.onDestroy()
         Log.d("MyVpnService", "VPN service destroyed")
     }
 
@@ -141,6 +166,10 @@ class MyVpnService : VpnService() {
                         }
                     }
                 }
+            } catch (e: java.io.IOException) {
+                // Если TUN закрыт, мы просто выходим из цикла без спама в логи
+                if (isRunning) Log.e("MyVpnService", "Ошибка чтения (TUN закрыт)", e)
+                break
             } catch (e: Exception) {
                 Log.e("MyVpnService", "Ошибка при чтении пакета", e)
                 break
