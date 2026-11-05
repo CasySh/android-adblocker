@@ -79,6 +79,20 @@ class MyVpnService : VpnService() {
         Log.d("MyVpnService", "VPN service destroyed")
     }
 
+    // если включили другой VPN
+    override fun onRevoke() {
+        Log.w("MyVpnService", "VPN был отозван системой! Останавливаем сервис.")
+        stopVpn()
+        super.onRevoke()
+    }
+
+    // если пользователь выключил приложение
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        Log.d("MyVpnService", "Приложение закрыто пользователем. Останавливаем сервис.")
+        stopVpn()
+        super.onTaskRemoved(rootIntent)
+    }
+
     private fun createNotification(): android.app.Notification {
         val channelId = "vpn_channel"
 
