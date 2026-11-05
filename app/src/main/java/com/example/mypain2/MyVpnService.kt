@@ -80,115 +80,71 @@ class MyVpnService : VpnService() {
         val vpnOutput = FileOutputStream(vpnInterface!!.fileDescriptor)
         val packet = ByteArray(32767)
 
+        val parser = DnsParser()
+
         while (isRunning) {
             try {
                 val length = vpnInput.read(packet)
 
                 if (length > 0) {
-                    val version = (packet[0].toInt() shr 4) and 0x0F
+                    // DNS-запрос - вернется домен
+                    // если нет - null
+                    val domain = parser.parsePacket(packet, length)
 
-                    if (version == 4) { // IPv4
-                        val ipHeaderLength = (packet[0].toInt() and 0x0F) * 4
-                        val protocol = packet[9].toInt() and 0xFF // 6 = TCP, 17 = UDP
-
-                        // Извлечение IP назначения (байты 16..19)
-                        val destIp =
-                            "${packet[16].toUByte()}.${packet[17].toUByte()}.${packet[18].toUByte()}.${packet[19].toUByte()}"
-
-                        if (protocol == 17) { // UDP. 8 байт
-                            val srcPort = ((packet[ipHeaderLength].toInt() and 0xFF) shl 8) or
-                                    (packet[ipHeaderLength + 1].toInt() and 0xFF)
-                            val destPort = ((packet[ipHeaderLength + 2].toInt() and 0xFF) shl 8) or
-                                    (packet[ipHeaderLength + 3].toInt() and 0xFF)
-
-                            // Если destPort == 53, перед нами DNS-запрос
-                            if (destPort == 53) {
-                                val dnsHeaderOffset = ipHeaderLength + 8
-                                // в DNS заголовке первые 12 байт - служебная информация, пропускаем
-                                val domainOffset = dnsHeaderOffset + 12
-
-                                val domain = parseDnsName(packet, domainOffset)
-
-                                var isBlocked = false
-                                for (blockedDomain in blacklist) {
-                                    if (domain == blockedDomain || domain.endsWith(".$blockedDomain")) {
-                                        isBlocked = true
-                                        break
-                                    }
-                                }
-                                if (isBlocked) {
-                                    Log.d("MyVpnService", "БЛОКИРОВКА: $domain")
-
-                                    // копируем входящий пакет, чтобы изменить его на ответ
-                                    val response = packet.copyOf(length)
-
-                                    // меняем получателя и отправителя местами
-                                    for (i in 0 until 4) {
-                                        val temp = response[12 + i]
-                                        response[12 + i] = response[16 + i]
-                                        response[16 + i] = temp
-                                    }
-
-                                    // меняем UDP-порты местами (srcPort и dstPort)
-                                    val udpOffset = ipHeaderLength
-                                    val tempPort1 = response[udpOffset]
-                                    val tempPort2 = response[udpOffset + 1]
-                                    response[udpOffset] = response[udpOffset + 2]
-                                    response[udpOffset + 1] = response[udpOffset + 3]
-                                    response[udpOffset + 2] = tempPort1
-                                    response[udpOffset + 3] = tempPort2
-
-                                    // меняем флаги DNS на NXDOMAIN (домена не существует)
-                                    val dnsFlagsOffset = udpOffset + 8 + 2
-                                    response[dnsFlagsOffset] = 0x81.toByte()
-                                    response[dnsFlagsOffset + 1] = 0x83.toByte()
-
-                                    // отправляем ответ обратно в TUN
-                                    try {
-                                        vpnOutput.write(response, 0, length)
-                                        Log.d("MyVpnService", "Отправлен NXDOMAIN для $domain")
-                                    } catch (e: Exception) {
-                                        Log.e("MyVpnService", "Ошибка записи ответа", e)
-                                    }
-                                } else {
-                                    Log.d("MyVpnService", "DNS запрос: $domain")
-                                }
+                    if (domain != null) {
+                        var isBlocked = false
+                        for (blockedDomain in blacklist) {
+                            if (domain == blockedDomain || domain.endsWith(".$blockedDomain")) {
+                                isBlocked = true
+                                break
                             }
+                        }
+
+                        if (isBlocked) {
+                            Log.d("MyVpnService", "БЛОКИРОВКА: $domain")
+
+                            // копируем входящий пакет
+                            val response = packet.copyOf(length)
+
+                            // меняем получателя и отправителя местами
+                            for (i in 0 until 4) {
+                                val temp = response[12 + i]
+                                response[12 + i] = response[16 + i]
+                                response[16 + i] = temp
+                            }
+
+                            // меняем UDP-порты местами
+                            // ipHeaderLength нужен нам только здесь, для генерации ответа
+                            val ipHeaderLength = (packet[0].toInt() and 0x0F) * 4
+                            val udpOffset = ipHeaderLength
+                            val tempPort1 = response[udpOffset]
+                            val tempPort2 = response[udpOffset + 1]
+                            response[udpOffset] = response[udpOffset + 2]
+                            response[udpOffset + 1] = response[udpOffset + 3]
+                            response[udpOffset + 2] = tempPort1
+                            response[udpOffset + 3] = tempPort2
+
+                            // меняем флаги DNS на NXDOMAIN
+                            val dnsFlagsOffset = udpOffset + 8 + 2
+                            response[dnsFlagsOffset] = 0x81.toByte()
+                            response[dnsFlagsOffset + 1] = 0x83.toByte()
+
+                            // отправляем ответ обратно в TUN
+                            try {
+                                vpnOutput.write(response, 0, length)
+                                Log.d("MyVpnService", "Отправлен NXDOMAIN для $domain")
+                            } catch (e: Exception) {
+                                Log.e("MyVpnService", "Ошибка записи ответа", e)
+                            }
+                        } else {
+                            Log.d("MyVpnService", "DNS запрос: $domain")
                         }
                     }
                 }
-            }
-            catch (e: Exception) {
+            } catch (e: Exception) {
                 Log.e("MyVpnService", "Ошибка при чтении пакета", e)
                 break
             }
         }
-    }
-
-    private fun parseDnsName(packet: ByteArray, startOffset: Int): String {
-        val domainParts = mutableListOf<String>()
-        var currentOffset = startOffset
-
-        while (true) {
-            // читаем длину следующей части
-            val length = packet[currentOffset].toInt() and 0xFF
-            // если длина 0 - домен закончился
-            if (length == 0) {
-                break
-            }
-            // если старшие два бита равны 11, это указатель на сжатие
-            // пока пропускаем это
-            if (length and 0xC0 == 0xC0) {
-                break
-            }
-
-            currentOffset++
-
-            val part = String(packet, currentOffset, length)
-            domainParts.add(part)
-
-            currentOffset += length
-        }
-        return domainParts.joinToString(".")
     }
 }
