@@ -16,9 +16,33 @@ class MyVpnService : VpnService() {
     private var vpnThread: Thread? = null
     @Volatile
     private var isRunning = false
-    val blacklist = setOf("doubleclick.net", "googleads.g.doubleclick.net", "adservice.google.com")
+    private val blacklist = HashSet<String>()
     companion object {
         const val ACTION_STOP = "com.example.mypain2.STOP_VPN"
+    }
+
+    private fun loadBlocklist() {
+        if (blacklist.isNotEmpty()) return
+
+        try {
+            val inputStream = assets.open("blocklist.txt")
+            val reader = inputStream.bufferedReader()
+
+            reader.forEachLine { line ->
+                // убираем пробелы по краям и пропускаем пустые строки или комментарии
+                val trimmedLine = line.trim()
+                if (trimmedLine.isNotEmpty() && !trimmedLine.startsWith("#")) {
+                    blacklist.add(trimmedLine)
+                }
+            }
+            reader.close()
+            Log.d("MyVpnService", "Загружено ${blacklist.size} доменов из файла")
+
+        } catch (e: Exception) {
+            Log.e("MyVpnService", "Ошибка загрузки blacklist", e)
+            // запасной вариант
+            blacklist.addAll(listOf("doubleclick.net", "googleads.g.doubleclick.net", "adservice.google.com"))
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -27,6 +51,7 @@ class MyVpnService : VpnService() {
             return START_NOT_STICKY
         }
         Log.d("MyVpnService", "VPN service started")
+        loadBlocklist()
         startVpn()
         return START_STICKY
     }

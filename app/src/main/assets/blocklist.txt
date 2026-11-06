@@ -1,0 +1,5 @@
+doubleclick.net
+googleads.g.doubleclick.net
+adservice.google.com
+googlesyndication.com
+adtago.s3.amazonaws.com
