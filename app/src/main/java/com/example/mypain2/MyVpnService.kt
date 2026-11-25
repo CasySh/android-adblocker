@@ -10,11 +10,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.io.IOException
-import java.net.DatagramPacket
-import java.net.DatagramSocket
 import java.net.InetAddress
-import java.net.SocketTimeoutException
 
 class MyVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
@@ -170,7 +166,7 @@ class MyVpnService : VpnService() {
                         if (isBlocked) {
                             Log.d("Block", "БЛОКИРОВКА: $domain")
 
-                            val response = PacketBlocker.createBlockResponse(packet, length)
+                            val response = PacketBuilder.createBlockResponse(packet, length)
 
                             // отправляем ответ обратно в TUN
                             try {
@@ -221,54 +217,13 @@ class MyVpnService : VpnService() {
                                 }
 
                                 // создаем ответ для приложения
-                                val dnsResponseLength = responsePacket.length
-                                val newTotalLength = ipHeaderLength + 8 + dnsResponseLength
-
-                                val response = ByteArray(newTotalLength)
-
-                                // копируем IP-заголовок
-                                System.arraycopy(packet, 0, response, 0, ipHeaderLength)
-
-                                // меняем IP-адреса
-                                for (i in 0 until 4) {
-                                    val temp = response[12 + i]
-                                    response[12 + i] = response[16 + i]
-                                    response[16 + i] = temp
-                                }
-
-                                // копируем UDP-заголовок
-                                System.arraycopy(packet, udpOffset, response, udpOffset, 8)
-
-                                // меняем порты
-                                val tempPort1 = response[udpOffset]
-                                val tempPort2 = response[udpOffset + 1]
-                                response[udpOffset] = response[udpOffset + 2]
-                                response[udpOffset + 1] = response[udpOffset + 3]
-                                response[udpOffset + 2] = tempPort1
-                                response[udpOffset + 3] = tempPort2
-
-                                // обновляем длины IP
-                                response[2] = ((newTotalLength shr 8) and 0xFF).toByte()
-                                response[3] = (newTotalLength and 0xFF).toByte()
-
-                                // обновляем длины UDP
-                                val newUdpLength = 8 + dnsResponseLength
-                                response[udpOffset + 4] = ((newUdpLength shr 8) and 0xFF).toByte()
-                                response[udpOffset + 5] = (newUdpLength and 0xFF).toByte()
-
-                                // копируем данные ответа
-                                System.arraycopy(responsePacket.data, 0, response, udpOffset + 8, dnsResponseLength)
-
-                                // пересчитываем контрольную сумму
-                                PacketBlocker.calculateIpChecksum(response, ipHeaderLength)
-
-                                // для UDP в IPv4 контрольную сумму можно поставить 0
-                                response[udpOffset + 6] = 0
-                                response[udpOffset + 7] = 0
+                                val response = PacketBuilder.createProxyResponse(
+                                    packet, length, responsePacket.data, responsePacket.length
+                                )
 
                                 // отправляем обратно в TUN
-                                vpnOutput.write(response, 0, newTotalLength)
-                                Log.d("MyVpnService", "DNS ответ получен и отправлен, размер: $newTotalLength")
+                                vpnOutput.write(response, 0, response.size)
+                                Log.d("MyVpnService", "DNS ответ получен и отправлен, размер: ${response.size}")
 
                             } catch (e: Exception) {
                                 Log.e("MyVpnService", "Ошибка проксирования DNS", e)

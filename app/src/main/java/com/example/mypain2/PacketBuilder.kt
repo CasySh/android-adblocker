@@ -1,8 +1,10 @@
 package com.example.mypain2
 
-object PacketBlocker {
+import android.util.Log
 
-    // возвращает готовый ответ NXDOMAIN
+object PacketBuilder {
+
+    // возвращает готовый ответ для заблокированного домена (NXDOMAIN)
     fun createBlockResponse(packet: ByteArray, length: Int): ByteArray {
         val response = packet.copyOf(length)
 
@@ -37,6 +39,60 @@ object PacketBlocker {
 
         return response
     }
+
+    // возвращает готовый ответ для нормального домена
+    fun createProxyResponse(originalPacket: ByteArray, originalLength: Int, dnsResponseData: ByteArray, dnsResponseLength: Int
+    ): ByteArray {
+
+        val ipHeaderLength = (originalPacket[0].toInt() and 0x0F) * 4
+        val udpOffset = ipHeaderLength
+        val newTotalLength = ipHeaderLength + 8 + dnsResponseLength
+
+        val response = ByteArray(newTotalLength)
+
+        // копируем IP-заголовок
+        System.arraycopy(originalPacket, 0, response, 0, ipHeaderLength)
+
+        // меняем IP-адреса
+        for (i in 0 until 4) {
+            val temp = response[12 + i]
+            response[12 + i] = response[16 + i]
+            response[16 + i] = temp
+        }
+
+        // копируем UDP-заголовок
+        System.arraycopy(originalPacket, udpOffset, response, udpOffset, 8)
+
+        // меняем порты
+        val tempPort1 = response[udpOffset]
+        val tempPort2 = response[udpOffset + 1]
+        response[udpOffset] = response[udpOffset + 2]
+        response[udpOffset + 1] = response[udpOffset + 3]
+        response[udpOffset + 2] = tempPort1
+        response[udpOffset + 3] = tempPort2
+
+        // обновляем длины IP
+        response[2] = ((newTotalLength shr 8) and 0xFF).toByte()
+        response[3] = (newTotalLength and 0xFF).toByte()
+
+        // обновляем длины UDP
+        val newUdpLength = 8 + dnsResponseLength
+        response[udpOffset + 4] = ((newUdpLength shr 8) and 0xFF).toByte()
+        response[udpOffset + 5] = (newUdpLength and 0xFF).toByte()
+
+        // копируем данные ответа
+        System.arraycopy(dnsResponseData, 0, response, udpOffset + 8, dnsResponseLength)
+
+        // пересчитываем контрольную сумму
+        calculateIpChecksum(response, ipHeaderLength)
+
+        // для UDP в IPv4 контрольную сумму можно поставить 0
+        response[udpOffset + 6] = 0
+        response[udpOffset + 7] = 0
+
+        return response
+    }
+
 
     // пересчет контрольной суммы IP-заголовка
     fun calculateIpChecksum(packet: ByteArray, ipHeaderLength: Int) {
