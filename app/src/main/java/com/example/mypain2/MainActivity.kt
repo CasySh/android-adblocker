@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -36,6 +35,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 class MainActivity : ComponentActivity() {
+
+    private var isVpnActive by mutableStateOf(false)
     private val vpnPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult())
     { result ->
@@ -46,24 +47,26 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (!isGranted) {
+            Log.w("MainActivity", "Notification permission denied")
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            val permissionLauncher = registerForActivityResult(
-                ActivityResultContracts.RequestPermission()
-            ) { isGranted ->
-                if (!isGranted) {
-                    Log.w("MainActivity", "Notification permission denied")
-                }
-            }
-            permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
         setContent {
             Mypain2Theme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     MainScreen(
                         modifier = Modifier.padding(innerPadding),
+                        isVpnActive = isVpnActive,
                         onStartVpn = { onStartVpnClicked() },
                         onStopVpn = { stopVpnService() }
                     )
@@ -87,6 +90,7 @@ class MainActivity : ComponentActivity() {
     private fun startVpnService() {
         val intent = Intent(this, MyVpnService::class.java)
         startService(intent)
+        isVpnActive = true
         Toast.makeText(this, "VPN starting...", Toast.LENGTH_SHORT).show()
     }
     private fun stopVpnService() {
@@ -96,6 +100,7 @@ class MainActivity : ComponentActivity() {
         }
         // Используем startService, чтобы передать команду в onStartCommand
         startService(intent)
+        isVpnActive = false
         Toast.makeText(this, "VPN stopped", Toast.LENGTH_SHORT).show()
     }
 }
@@ -103,10 +108,10 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainScreen(
     modifier: Modifier = Modifier,
+    isVpnActive: Boolean,
     onStartVpn: () -> Unit,
     onStopVpn: () -> Unit
 ) {
-    var isVpnActive by remember { mutableStateOf(false) }
 
     Box(
         modifier = modifier.fillMaxSize(),
@@ -116,10 +121,8 @@ fun MainScreen(
             onClick = {
                 if (isVpnActive) {
                     onStopVpn()
-                    isVpnActive = false
                 } else {
                     onStartVpn()
-                    isVpnActive = true
                 }
             },
             modifier = Modifier
@@ -131,7 +134,7 @@ fun MainScreen(
             )
         ) {
             Text(
-                text = if (isVpnActive) "Stop\nVPN" else "Start\nVPN",
+                text = if (isVpnActive) "Stop\nVPN" else "Start\nBlock",
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
@@ -145,7 +148,7 @@ fun MainScreen(
 @Composable
 fun MainScreenPreview() {
     Mypain2Theme {
-        MainScreen(onStartVpn = {}, onStopVpn = {})
+        MainScreen(isVpnActive = false, onStartVpn = {}, onStopVpn = {})
     }
 }
 
