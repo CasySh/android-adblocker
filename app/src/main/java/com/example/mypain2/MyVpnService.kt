@@ -11,6 +11,7 @@ import androidx.core.app.NotificationCompat
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.InetAddress
+import androidx.core.content.edit
 
 class MyVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
@@ -83,6 +84,9 @@ class MyVpnService : VpnService() {
         Log.d("MyVpnService", "VPN established successfully")
         startForeground(1, createNotification())
 
+        getSharedPreferences("vpn_prefs", MODE_PRIVATE).edit {
+            putBoolean("is_vpn_active", true) }
+
         isRunning = true
         vpnThread = Thread { readPackets(establishedInterface) }.apply { start() }
     }
@@ -95,6 +99,8 @@ class MyVpnService : VpnService() {
         vpnThread?.interrupt()
         vpnThread = null
         stopForeground(STOP_FOREGROUND_REMOVE)
+        getSharedPreferences("vpn_prefs", MODE_PRIVATE).edit {
+            putBoolean("is_vpn_active", false) }
         stopSelf()
     }
 
@@ -209,7 +215,7 @@ class MyVpnService : VpnService() {
 
                                 // ждем ответ
                                 socket.soTimeout = 2000
-                                val responseBuffer = ByteArray(1024)
+                                val responseBuffer = ByteArray(4096)
                                 val responsePacket = java.net.DatagramPacket(responseBuffer, responseBuffer.size)
 
                                 try {

@@ -61,6 +61,8 @@ class MainActivity : ComponentActivity() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
+        val prefs = getSharedPreferences("vpn_prefs", MODE_PRIVATE)
+        isVpnActive = prefs.getBoolean("is_vpn_active", false)
         setContent {
             Mypain2Theme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
@@ -73,6 +75,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+    override fun onResume() {
+        super.onResume()
+        val prefs = getSharedPreferences("vpn_prefs", MODE_PRIVATE)
+        isVpnActive = prefs.getBoolean("is_vpn_active", false)
     }
 
     private fun onStartVpnClicked() {
