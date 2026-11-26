@@ -169,12 +169,17 @@ class MyVpnService : VpnService() {
                             val response = PacketBuilder.createBlockResponse(packet, length)
 
                             // отправляем ответ обратно в TUN
-                            try {
-                                vpnOutput.write(response, 0, length)
-                                Log.d("NXDOMAIN", "Отправлен NXDOMAIN для $domain")
-                            } catch (e: Exception) {
-                                Log.e("NX_err", "Ошибка записи ответа", e)
+                            if (response != null) {
+                                try {
+                                    vpnOutput.write(response, 0, response.size)
+                                    Log.d("NXDOMAIN", "Отправлен NXDOMAIN для $domain")
+                                } catch (e: Exception) {
+                                    Log.e("NX_err", "Ошибка записи ответа", e)
+                                }
+                            } else {
+                                Log.w("NX_err", "Не удалось создать NXDOMAIN для $domain")
                             }
+
                         } else {
                             Log.d("DNS", "DNS запрос: $domain")
 
@@ -222,8 +227,12 @@ class MyVpnService : VpnService() {
                                 )
 
                                 // отправляем обратно в TUN
-                                vpnOutput.write(response, 0, response.size)
-                                Log.d("MyVpnService", "DNS ответ получен и отправлен, размер: ${response.size}")
+                                if (response != null) {
+                                    vpnOutput.write(response, 0, response.size)
+                                    Log.d("MyVpnService", "DNS ответ получен и отправлен, размер: ${response.size}")
+                                } else {
+                                    Log.w("MyVpnService", "Не удалось собрать ответ для $domain")
+                                }
 
                             } catch (e: Exception) {
                                 Log.e("MyVpnService", "Ошибка проксирования DNS", e)

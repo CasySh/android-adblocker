@@ -1,11 +1,11 @@
 package com.example.mypain2
 
-import android.util.Log
-
 object PacketBuilder {
 
-    // возвращает готовый ответ для заблокированного домена (NXDOMAIN)
-    fun createBlockResponse(packet: ByteArray, length: Int): ByteArray {
+    // возвращает готовый ответ для заблокированного домена (NXDOMAIN) или null
+    fun createBlockResponse(packet: ByteArray, length: Int): ByteArray? {
+        if (length < 20 || length > packet.size) return null
+
         val response = packet.copyOf(length)
 
         // меняем получателя и отправителя местами
@@ -14,6 +14,9 @@ object PacketBuilder {
             response[12 + i] = response[16 + i]
             response[16 + i] = temp
         }
+
+        // стандартный TTL для ответного пакета
+        response[8] = 64.toByte()
 
         // меняем UDP-порты местами
         val ipHeaderLength = (packet[0].toInt() and 0x0F) * 4
@@ -30,6 +33,13 @@ object PacketBuilder {
         response[dnsFlagsOffset] = 0x81.toByte()
         response[dnsFlagsOffset + 1] = 0x83.toByte()
 
+        // Обнуляем ANCOUNT и NSCOUNT
+        val dnsOffset = udpOffset + 8
+        response[dnsOffset + 6] = 0
+        response[dnsOffset + 7] = 0
+        response[dnsOffset + 8] = 0
+        response[dnsOffset + 9] = 0
+
         // пересчитываем контрольную сумму
         calculateIpChecksum(response, ipHeaderLength)
 
@@ -41,12 +51,16 @@ object PacketBuilder {
     }
 
     // возвращает готовый ответ для нормального домена
-    fun createProxyResponse(originalPacket: ByteArray, originalLength: Int, dnsResponseData: ByteArray, dnsResponseLength: Int
-    ): ByteArray {
-
+    fun createProxyResponse(originalPacket: ByteArray, originalLength: Int, dnsResponseData: ByteArray, dnsResponseLength: Int): ByteArray? {
         val ipHeaderLength = (originalPacket[0].toInt() and 0x0F) * 4
         val udpOffset = ipHeaderLength
         val newTotalLength = ipHeaderLength + 8 + dnsResponseLength
+
+        // проверка исходного пакета
+        if (originalLength < 20 || originalLength > originalPacket.size) return null
+        if (ipHeaderLength < 20 || ipHeaderLength >= originalLength) return null
+        if (udpOffset + 8 > originalLength) return null
+        if (dnsResponseLength <= 0 || dnsResponseLength > dnsResponseData.size) return null
 
         val response = ByteArray(newTotalLength)
 
@@ -103,10 +117,6 @@ object PacketBuilder {
         var sum = 0L
         var i = 0
         while (i < ipHeaderLength) {
-            if (i == 10) { // пропускаем байты checksum
-                i += 2
-                continue
-            }
             val word = ((packet[i].toInt() and 0xFF) shl 8) or (packet[i + 1].toInt() and 0xFF)
             sum += word
             i += 2
